@@ -55,6 +55,53 @@ app.post('/api/archive', async (req, res) => {
   }
 });
 
+// Fetch Google Contacts endpoint
+app.get('/contacts', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    
+    if (!authHeader) {
+      return res.status(401).json({ 
+        error: 'Missing authorization header' 
+      });
+    }
+
+    const { access_token } = req.query;
+
+    if (!access_token) {
+      return res.status(400).json({ 
+        error: 'Missing access_token query parameter' 
+      });
+    }
+
+    // Initialize Google People API client
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token });
+
+    const people = google.people({ version: 'v1', auth: oauth2Client });
+
+    // Fetch contacts
+    const response = await people.people.connections.list({
+      resourceName: 'people/me',
+      pageSize: 1000,
+      personFields: 'names,emailAddresses,phoneNumbers,photos'
+    });
+
+    res.json({ 
+      success: true,
+      contacts: response.data.connections || [],
+      totalResults: response.data.totalItems || 0
+    });
+
+  } catch (error) {
+    console.error('Contacts fetch error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch contacts',
+      details: error.message 
+    });
+  }
+});
+
 // Send email endpoint
 app.post('/api/send', async (req, res) => {
   try {
