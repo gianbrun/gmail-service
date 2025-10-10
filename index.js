@@ -72,11 +72,12 @@ app.post('/api/send', async (req, res) => {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
-    // Create email in RFC 2822 format
+    // Create email in RFC 2822 format with proper MIME headers
     const email = [
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=UTF-8',
       `To: ${to}`,
       `Subject: ${subject}`,
-      'Content-Type: text/html; charset=utf-8',
       '',
       body
     ].join('\n');
@@ -88,19 +89,31 @@ app.post('/api/send', async (req, res) => {
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
-    // Send the email and add SENT label
-    const result = await gmail.users.messages.send({
+    // Send the email
+    const sendResult = await gmail.users.messages.send({
       userId: 'me',
       requestBody: {
-        raw: encodedEmail,
-        labelIds: ['SENT']
+        raw: encodedEmail
       }
     });
+
+    // Ensure the message appears in the Gmail "Sent" label
+    try {
+      await gmail.users.messages.modify({
+        userId: 'me',
+        id: sendResult.data.id,
+        requestBody: {
+          addLabelIds: ['SENT']
+        }
+      });
+    } catch (labelError) {
+      console.warn('Failed to explicitly add SENT label (Gmail usually applies it automatically):', labelError?.message || labelError);
+    }
 
     res.json({ 
       success: true, 
       message: 'Email sent successfully',
-      messageId: result.data.id 
+      messageId: sendResult.data.id 
     });
 
   } catch (error) {
