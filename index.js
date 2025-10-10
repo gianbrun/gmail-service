@@ -88,11 +88,12 @@ app.post('/api/send', async (req, res) => {
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
-    // Send the email
+    // Send the email and add SENT label
     const result = await gmail.users.messages.send({
       userId: 'me',
       requestBody: {
-        raw: encodedEmail
+        raw: encodedEmail,
+        labelIds: ['SENT']
       }
     });
 
