@@ -141,8 +141,10 @@ app.post('/api/send', async (req, res) => {
     let fromHeader = userEmail;
     
     if (from_name) {
-      // Use the provided name from the profiles table
-      fromHeader = `${from_name} <${userEmail}>`;
+      // Use the provided name from the profiles table (RFC 2047 encode if needed)
+      const needsEncoding = /[^\x20-\x7E]/.test(from_name) || /[",]/.test(from_name);
+      const encodedName = needsEncoding ? `=?UTF-8?B?${Buffer.from(from_name, 'utf8').toString('base64')}?=` : from_name;
+      fromHeader = `${encodedName} <${userEmail}>`;
       console.log('Using provided from_name:', from_name);
       console.log('Final From header:', fromHeader);
     } else {
@@ -170,11 +172,12 @@ app.post('/api/send', async (req, res) => {
       'MIME-Version: 1.0',
       'Content-Type: text/html; charset=UTF-8',
       `From: ${fromHeader}`,
+      `Reply-To: ${fromHeader}`,
       `To: ${to}`,
       `Subject: ${subject}`,
       '',
       formattedBody
-    ].join('\n');
+    ].join('\r\n');
 
     console.log('Email headers:', {
       from: fromHeader,
