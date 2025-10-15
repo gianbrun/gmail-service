@@ -104,10 +104,22 @@ app.get('/contacts', async (req, res) => {
 
 // Send email endpoint
 app.post('/api/send', async (req, res) => {
+  console.log('=== RAILWAY SEND EMAIL START ===');
+  console.log('Timestamp:', new Date().toISOString());
+  
   try {
     const { to, subject, body, access_token, from_name } = req.body;
 
+    console.log('Request params:', {
+      to,
+      subject,
+      body_length: body?.length || 0,
+      has_access_token: !!access_token,
+      from_name
+    });
+
     if (!to || !subject || !body || !access_token) {
+      console.error('Missing required fields');
       return res.status(400).json({ 
         error: 'Missing required fields: to, subject, body, and access_token' 
       });
@@ -119,9 +131,11 @@ app.post('/api/send', async (req, res) => {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
+    console.log('Fetching user Gmail profile...');
     // Get user profile to retrieve email
     const profile = await gmail.users.getProfile({ userId: 'me' });
     const userEmail = profile.data.emailAddress;
+    console.log('User email from Gmail:', userEmail);
 
     // Use provided from_name or try to get display name from Gmail settings
     let fromHeader = userEmail;
@@ -130,22 +144,27 @@ app.post('/api/send', async (req, res) => {
       // Use the provided name from the profiles table
       fromHeader = `${from_name} <${userEmail}>`;
       console.log('Using provided from_name:', from_name);
+      console.log('Final From header:', fromHeader);
     } else {
       // Fallback: try to get the user's display name from Gmail settings
+      console.log('No from_name provided, fetching from Gmail settings...');
       try {
         const sendAs = await gmail.users.settings.sendAs.list({ userId: 'me' });
         const primarySendAs = sendAs.data.sendAs?.find(s => s.isPrimary || s.isDefault);
         if (primarySendAs?.displayName) {
           fromHeader = `${primarySendAs.displayName} <${userEmail}>`;
+          console.log('Using Gmail display name:', primarySendAs.displayName);
         }
       } catch (err) {
         console.warn('Could not fetch display name, using email only:', err?.message);
       }
+      console.log('Final From header:', fromHeader);
     }
 
     // Convert line breaks to HTML if body contains plain text
     const formattedBody = body.replace(/\n/g, '<br>');
 
+    console.log('Building email message...');
     // Create email in RFC 2822 format with proper MIME headers
     const email = [
       'MIME-Version: 1.0',
@@ -157,6 +176,12 @@ app.post('/api/send', async (req, res) => {
       formattedBody
     ].join('\n');
 
+    console.log('Email headers:', {
+      from: fromHeader,
+      to,
+      subject
+    });
+
     // Encode email in base64url format
     const encodedEmail = Buffer.from(email)
       .toString('base64')
@@ -164,6 +189,7 @@ app.post('/api/send', async (req, res) => {
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
+    console.log('Sending email via Gmail API...');
     // Send the email
     const sendResult = await gmail.users.messages.send({
       userId: 'me',
@@ -172,7 +198,10 @@ app.post('/api/send', async (req, res) => {
       }
     });
 
+    console.log('Gmail API send result. Message ID:', sendResult.data.id);
+
     // Ensure the message appears in the Gmail "Sent" label
+    console.log('Adding SENT label...');
     try {
       await gmail.users.messages.modify({
         userId: 'me',
@@ -181,9 +210,13 @@ app.post('/api/send', async (req, res) => {
           addLabelIds: ['SENT']
         }
       });
+      console.log('SENT label added successfully');
     } catch (labelError) {
       console.warn('Failed to explicitly add SENT label (Gmail usually applies it automatically):', labelError?.message || labelError);
     }
+
+    console.log('Email sent successfully!');
+    console.log('=== RAILWAY SEND EMAIL END ===');
 
     res.json({ 
       success: true, 
@@ -192,7 +225,15 @@ app.post('/api/send', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Send error:', error);
+    console.error('=== RAILWAY SEND EMAIL ERROR ===');
+    console.error('Error type:', error.constructor.name);
+    console.error('Error message:', error.message);
+    console.error('Error stack:', error.stack);
+    if (error.response) {
+      console.error('API response error:', error.response.data);
+    }
+    console.error('=== ERROR END ===');
+    
     res.status(500).json({ 
       error: 'Failed to send email',
       details: error.message 
