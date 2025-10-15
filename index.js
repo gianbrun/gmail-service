@@ -140,49 +140,17 @@ app.post('/api/send', async (req, res) => {
     // Helper to RFC 2047 encode non-ASCII header values
     const encodeHeaderWord = (value) => `=?UTF-8?B?${Buffer.from(String(value), 'utf8').toString('base64')}?=`;
 
-    console.log('Building From header - preferring DB display_name (from_name)');
+    console.log('Building From header - using HARDCODED name "Vorname Nachname"');
 
-    // Prefer DB display_name (from_name) if provided; fall back to Gmail SendAs or People API
+    // Force From header to this hardcoded display name for testing
     let fromHeader;
-    
-    if (from_name && typeof from_name === 'string' && from_name.trim().length > 0) {
-      const cleanName = from_name.trim();
-      const namePart = /[^\x20-\x7E]/.test(cleanName) || /[",]/.test(cleanName)
-        ? encodeHeaderWord(cleanName)
-        : cleanName;
-      fromHeader = `${namePart} <${userEmail}>`;
-      console.log('Using display_name from DB:', cleanName);
-      console.log('Final From header:', fromHeader);
-    } else {
-      console.log('No from_name provided, trying Gmail SendAs then People API...');
-      fromHeader = userEmail; // default
-      try {
-        // Try Gmail SendAs display name first
-        const sendAs = await gmail.users.settings.sendAs.list({ userId: 'me' });
-        const primarySendAs = sendAs.data.sendAs?.find(s => s.isPrimary || s.isDefault);
-        let displayName = primarySendAs?.displayName?.trim();
-
-        // Fallback to People API if needed
-        if (!displayName) {
-          const people = google.people({ version: 'v1', auth: oauth2Client });
-          const me = await people.people.get({ resourceName: 'people/me', personFields: 'names' });
-          displayName = me.data.names?.[0]?.displayName?.trim();
-        }
-
-        if (displayName) {
-          const namePart = /[^\x20-\x7E]/.test(displayName) || /[",]/.test(displayName)
-            ? encodeHeaderWord(displayName)
-            : displayName;
-          fromHeader = `${namePart} <${userEmail}>`;
-          console.log('Using fallback display name:', displayName);
-          console.log('Final From header:', fromHeader);
-        } else {
-          console.log('No display name available, using email only');
-        }
-      } catch (err) {
-        console.warn('Could not fetch display name, using email only:', err?.message || err);
-      }
-    }
+    const hardcodedName = 'Vorname Nachname';
+    const namePart = /[^\x20-\x7E]/.test(hardcodedName) || /[",]/.test(hardcodedName)
+      ? encodeHeaderWord(hardcodedName)
+      : hardcodedName;
+    fromHeader = `${namePart} <${userEmail}>`;
+    console.log('Using hardcoded From name:', hardcodedName);
+    console.log('Final From header:', fromHeader);
 
     // Convert line breaks to HTML if body contains plain text
     const formattedBody = body.replace(/\n/g, '<br>');
