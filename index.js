@@ -140,51 +140,55 @@ app.post('/api/send', async (req, res) => {
     // Helper to RFC 2047 encode non-ASCII header values
     const encodeHeaderWord = (value) => `=?UTF-8?B?${Buffer.from(String(value), 'utf8').toString('base64')}?=`;
 
-    console.log('Building From header - from_name provided:', from_name);
+    console.log('Building From header - preferring DB display_name (from_name)');
 
-    // Use provided from_name or try to get display name from Gmail settings
+    // Prefer DB display_name (from_name) if provided; fall back to Gmail SendAs or People API
     let fromHeader;
     
     if (from_name && typeof from_name === 'string' && from_name.trim().length > 0) {
-      // Use the provided name from the profiles table
       const cleanName = from_name.trim();
       const namePart = /[^\x20-\x7E]/.test(cleanName) || /[",]/.test(cleanName)
         ? encodeHeaderWord(cleanName)
         : cleanName;
       fromHeader = `${namePart} <${userEmail}>`;
-      console.log('Using provided from_name:', cleanName);
+      console.log('Using display_name from DB:', cleanName);
       console.log('Final From header:', fromHeader);
     } else {
-      // Fallback: try to get the user's display name from Gmail settings
-      console.log('No from_name provided, fetching from Gmail settings...');
+      console.log('No from_name provided, trying Gmail SendAs then People API...');
+      fromHeader = userEmail; // default
       try {
+        // Try Gmail SendAs display name first
         const sendAs = await gmail.users.settings.sendAs.list({ userId: 'me' });
         const primarySendAs = sendAs.data.sendAs?.find(s => s.isPrimary || s.isDefault);
-        if (primarySendAs?.displayName) {
-          const cleanName = primarySendAs.displayName.trim();
-          const namePart = /[^\x20-\x7E]/.test(cleanName) || /[",]/.test(cleanName)
-            ? encodeHeaderWord(cleanName)
-            : cleanName;
+        let displayName = primarySendAs?.displayName?.trim();
+
+        // Fallback to People API if needed
+        if (!displayName) {
+          const people = google.people({ version: 'v1', auth: oauth2Client });
+          const me = await people.people.get({ resourceName: 'people/me', personFields: 'names' });
+          displayName = me.data.names?.[0]?.displayName?.trim();
+        }
+
+        if (displayName) {
+          const namePart = /[^\x20-\x7E]/.test(displayName) || /[",]/.test(displayName)
+            ? encodeHeaderWord(displayName)
+            : displayName;
           fromHeader = `${namePart} <${userEmail}>`;
-          console.log('Using Gmail display name:', cleanName);
+          console.log('Using fallback display name:', displayName);
           console.log('Final From header:', fromHeader);
         } else {
-          fromHeader = userEmail;
-          console.log('No display name found, using email only');
+          console.log('No display name available, using email only');
         }
       } catch (err) {
-        console.warn('Could not fetch display name, using email only:', err?.message);
-        fromHeader = userEmail;
+        console.warn('Could not fetch display name, using email only:', err?.message || err);
       }
     }
 
     // Convert line breaks to HTML if body contains plain text
     const formattedBody = body.replace(/\n/g, '<br>');
 
-    // Encode Subject per RFC 2047 if it contains non-ASCII
-    const subjectHeader = /[^\x20-\x7E]/.test(subject)
-      ? encodeHeaderWord(subject)
-      : subject;
+    // Always RFC 2047 encode Subject to avoid client misinterpretation
+    const subjectHeader = encodeHeaderWord(subject || '');
 
     console.log('Building email message...');
     // Create email in RFC 2822 format with proper MIME headers
