@@ -200,6 +200,48 @@ app.post('/api/send', async (req, res) => {
   }
 });
 
+// Fetch Gmail signatures endpoint
+app.post('/api/signatures', async (req, res) => {
+  try {
+    const { access_token } = req.body;
+
+    if (!access_token) {
+      return res.status(400).json({ 
+        error: 'Missing required field: access_token' 
+      });
+    }
+
+    // Initialize Gmail API client
+    const oauth2Client = new google.auth.OAuth2();
+    oauth2Client.setCredentials({ access_token });
+
+    const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+    // Get all send-as settings (including signatures)
+    const sendAsResponse = await gmail.users.settings.sendAs.list({ userId: 'me' });
+    
+    const signatures = sendAsResponse.data.sendAs?.map(sendAs => ({
+      email: sendAs.sendAsEmail,
+      displayName: sendAs.displayName || '',
+      signature: sendAs.signature || '',
+      isDefault: sendAs.isDefault || false,
+      isPrimary: sendAs.isPrimary || false,
+    })) || [];
+
+    res.json({ 
+      success: true,
+      signatures 
+    });
+
+  } catch (error) {
+    console.error('Signatures fetch error:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch signatures',
+      details: error.message 
+    });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`Gmail API service running on port ${PORT}`);
