@@ -105,7 +105,7 @@ app.get('/contacts', async (req, res) => {
 // Send email endpoint
 app.post('/api/send', async (req, res) => {
   try {
-    const { to, subject, body, access_token } = req.body;
+    const { to, subject, body, access_token, from_name } = req.body;
 
     if (!to || !subject || !body || !access_token) {
       return res.status(400).json({ 
@@ -119,14 +119,42 @@ app.post('/api/send', async (req, res) => {
 
     const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
+    // Get user profile to retrieve email
+    const profile = await gmail.users.getProfile({ userId: 'me' });
+    const userEmail = profile.data.emailAddress;
+
+    // Use provided from_name or try to get display name from Gmail settings
+    let fromHeader = userEmail;
+    
+    if (from_name) {
+      // Use the provided name from the profiles table
+      fromHeader = `${from_name} <${userEmail}>`;
+      console.log('Using provided from_name:', from_name);
+    } else {
+      // Fallback: try to get the user's display name from Gmail settings
+      try {
+        const sendAs = await gmail.users.settings.sendAs.list({ userId: 'me' });
+        const primarySendAs = sendAs.data.sendAs?.find(s => s.isPrimary || s.isDefault);
+        if (primarySendAs?.displayName) {
+          fromHeader = `${primarySendAs.displayName} <${userEmail}>`;
+        }
+      } catch (err) {
+        console.warn('Could not fetch display name, using email only:', err?.message);
+      }
+    }
+
+    // Convert line breaks to HTML if body contains plain text
+    const formattedBody = body.replace(/\n/g, '<br>');
+
     // Create email in RFC 2822 format with proper MIME headers
     const email = [
       'MIME-Version: 1.0',
       'Content-Type: text/html; charset=UTF-8',
+      `From: ${fromHeader}`,
       `To: ${to}`,
       `Subject: ${subject}`,
       '',
-      body
+      formattedBody
     ].join('\n');
 
     // Encode email in base64url format
